@@ -1,0 +1,128 @@
+#          @@@@@@@@@@
+#        @@@@@@@@@@@@
+#       @@@@@
+#       @@@@
+# @@@@@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@@@@@
+#       @@@@
+#       @@@@
+#       @@@@
+#       @@@@
+#       @@@@
+#       @@@@
+# @@@@@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@@@@@
+
+from base_plugin import BasePlugin, MethodHook
+from hook_utils import find_class
+
+__id__ = "hide_slash_button"
+__name__ = "Hide Slash Button"
+__description__ = "Скрывает кнопку команд бота (slash) в группах."
+__icon__ = "feature_plugins/4"
+__author__ = "@feature_plugins (@theakres)"
+__version__ = "1.1"
+__min_version__ = "12.1.1"
+
+
+def _safe_int(value, default=0):
+ if value is None:
+  return default
+ try:
+  return int(value)
+ except (ValueError, TypeError):
+  return default
+
+
+def _is_private_bot_dialog(view):
+ try:
+  dialog_id = _safe_int(getattr(view, "dialog_id", 0))
+  if dialog_id <= 0:
+   return False
+
+  mc = None
+  account = _safe_int(getattr(view, "currentAccount", 0))
+  cls = find_class("org.telegram.messenger.MessagesController")
+  if cls:
+   mc = cls.getInstance(account)
+
+  user = mc.getUser(dialog_id) if mc else None
+  
+  if not user:
+   pf = getattr(view, "parentFragment", None)
+   if hasattr(pf, "getCurrentUser"):
+    user = pf.getCurrentUser()
+
+  return bool(user and getattr(user, "bot", False))
+ except Exception:
+  return False
+
+
+def _hide_button_ui(view):
+ try:
+  for attr in ["botCommandsMenuButton", "botCommandsMenuContainer"]:
+   obj = getattr(view, attr, None)
+   if obj:
+    try: obj.setVisibility(8)
+    except: pass
+    if attr == "botCommandsMenuButton":
+     try: obj.setOpened(False)
+     except: pass
+    else:
+     try: obj.dismiss()
+     except: pass
+
+  for field in ["hasBotCommands", "hasQuickReplies"]:
+   try: setattr(view, field, False)
+   except: pass
+ except:
+  pass
+
+
+class BaseSlashHook(MethodHook):
+ def after_hooked_method(self, param):
+  if not _is_private_bot_dialog(param.thisObject):
+   _hide_button_ui(param.thisObject)
+
+
+class SetBotsCountHook(MethodHook):
+ def before_hooked_method(self, param):
+  if not _is_private_bot_dialog(param.thisObject) and len(param.args) > 2:
+   try:
+    param.args[1] = False
+    param.args[2] = False
+   except:
+    pass
+
+
+class HideSlashButtonPlugin(BasePlugin):
+ def on_plugin_load(self):
+  target = "org.telegram.ui.Components.ChatActivityEnterView"
+  prefixes = ["", "p021.", "p022."]
+  
+  for p in prefixes:
+   cls_name = f"org.telegram.{p}ui.Components.ChatActivityEnterView"
+   cls = find_class(cls_name)
+   if not cls: continue
+
+   common_hook = BaseSlashHook()
+   for method in ["createBotCommandsMenuButton", "updateBotButton", "setBotInfo"]:
+    self.hook_all_methods(cls, method, common_hook, priority=50)
+   
+   self.hook_all_methods(cls, "setBotsCount", SetBotsCountHook(), priority=50)
+   self.log(f"[{__id__}] Applied to: {cls_name}")
+   return
+
+ def on_plugin_unload(self):
+  pass
+ 
+#       @@@@      
+# @@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@ 
+# @@@@@@@@@@@@@@@  
+# @@@@@@@@@@@@@@@ 
+# @@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@@
